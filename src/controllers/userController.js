@@ -1,4 +1,5 @@
 const { getUserByUid, createUserProfile, countUsers } = require('../services/userService');
+const { db } = require('../config/firebase');
 
 async function registerUser(req, res) {
   try {
