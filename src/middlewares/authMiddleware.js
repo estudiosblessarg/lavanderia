@@ -1,33 +1,36 @@
-const { admin, db } = require('../config/firebase');
+// middlewares/authMiddleware.js
+
+const { admin } = require('../config/firebase');
 
 async function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.replace('Bearer ', '').trim();
-
-  if (!token) {
-    console.log('[AUTH] Token no enviado');
-    return res.status(401).json({ error: 'Token no enviado' });
-  }
-
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    const userDoc = await db.collection('users').doc(decodedToken.uid).get();
+    const authHeader = req.headers.authorization || '';
 
-    if (!userDoc.exists) {
-      console.log('[AUTH] Usuario no registrado en Firestore:', decodedToken.uid);
-      return res.status(401).json({ error: 'Usuario no registrado' });
+    if (!authHeader.startsWith('Bearer ')) {
+      console.log('[AUTH] Header inválido');
+      return res.status(401).json({ error: 'No autorizado' });
     }
 
-    const userData = userDoc.data();
+    const token = authHeader.split('Bearer ')[1];
+
+    if (!token) {
+      console.log('[AUTH] Token vacío');
+      return res.status(401).json({ error: 'Token requerido' });
+    }
+
+    const decodedToken = await admin.auth().verifyIdToken(token);
+
     req.user = {
       uid: decodedToken.uid,
-      email: decodedToken.email,
-      role: userData.role || 'employee'
+      email: decodedToken.email || null
     };
-    console.log('[AUTH] Usuario autenticado:', req.user.uid, req.user.role);
+
+    console.log('[AUTH] OK:', req.user.uid);
+
     next();
+
   } catch (error) {
-    console.error('[AUTH] Error de verificación de token:', error.message);
+    console.error('[AUTH] Error:', error.message);
     return res.status(401).json({ error: 'Token inválido' });
   }
 }
