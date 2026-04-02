@@ -1,19 +1,23 @@
-const CACHE_NAME = 'appLavanderia';
+const CACHE_NAME = 'appLavanderia-v1';
 
 self.addEventListener('install', event => {
-  console.log('SW: Instalado');
-
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll([
         '/',
-        'styles.css',
-        'app.js',
         '/index.html',
+        '/styles.css',
+        '/app.js',
         '/manifest.json',
-        '/Icon-192.png',
-        '/Icon-512.png'
+        '/icon-192.png',
+        '/icon-512.png'
       ]);
     })
+  );
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request).then(res => res || fetch(event.request))
   );
 });

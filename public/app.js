@@ -360,12 +360,14 @@ async function init() {
 }
 
 
+// REGISTRO DEL SERVICE WORKER
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
-    
-      .then(reg => alert('SW registrado', reg))
-      .catch(err => alert('SW error', err));
+      .then(reg => console.log('SW registrado', reg))
+      .catch(err => console.error('Error SW', err));
   });
+}
 
 
 init();
