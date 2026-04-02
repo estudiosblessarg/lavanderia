@@ -34,22 +34,28 @@ const isEmployee = () => state.profile?.role === 'employee';
 
 // ================= API =================
 async function api(path, options = {}) {
-  const token = state.user ? await state.user.getIdToken() : null;
+  try {
+    const token = state.user ? await state.user.getIdToken() : null;
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    });
 
-  let data = {};
-  try { data = await res.json(); } catch (_) {}
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
 
-  if (!res.ok) throw new Error(data.message || 'Error API');
+    if (!res.ok) throw new Error(data.message || 'Error API');
 
-  return data;
+    return data;
+  } catch (e) {
+    console.error("API ERROR:", e);
+    alert("Error de conexión con el servidor");
+    throw e;
+  }
 }
 
 // ================= AUTH =================
@@ -101,60 +107,6 @@ async function logout() {
   });
 }
 
-// ================= USER ACTIONS =================
-async function updateRole() {
-  if (!isAdmin()) return alert('No autorizado');
-
-  const role = document.getElementById('role')?.value;
-
-  if (!role) return alert('Selecciona un rol');
-
-  await api('/api/users/update-role', {
-    method: 'PUT',
-    body: JSON.stringify({ role })
-  });
-
-  alert('Rol actualizado');
-  await loadProfile();
-}
-
-async function updatePassword() {
-  const password = document.getElementById('newPassword')?.value;
-
-  if (!password || password.length < 6) {
-    return alert('Minimo 6 caracteres');
-  }
-
-  await api('/api/users/update-password', {
-    method: 'PUT',
-    body: JSON.stringify({ password })
-  });
-
-  alert('Contraseña actualizada');
-}
-
-// ================= ORDER ACTIONS =================
-async function updateOrderStatus(id, status) {
-  await api(`/api/orders/${id}/status`, {
-    method: 'PUT',
-    body: JSON.stringify({ status })
-  });
-  await loadOrders();
-}
-
-async function markAsPaid(id) {
-  await api(`/api/orders/${id}/pay`, { method: 'PUT' });
-  await loadOrders();
-}
-
-// ================= CASH =================
-async function closeCash() {
-  if (!isAdmin()) return alert('Solo admin');
-
-  await api('/api/cash/close', { method: 'POST' });
-  alert('Caja cerrada');
-}
-
 // ================= DATA =================
 async function loadProfile() {
   const profile = await api('/api/users/me');
@@ -175,18 +127,24 @@ async function loadMetrics() {
 // ================= UI =================
 function renderApp() {
 
+  // LOADING
   if (!state.initialized) {
     appRoot.innerHTML = `<div class="center"><p>Cargando...</p></div>`;
     return;
   }
 
+  // LOGIN / REGISTER
   if (!state.user) {
-    if (state.view === 'register') renderRegister();
-    else renderLogin();
+    appRoot.innerHTML = `
+      <div class="main">
+        ${state.view === 'register' ? renderRegister() : renderLogin()}
+      </div>
+    `;
     bindGlobalEvents();
     return;
   }
 
+  // APP
   appRoot.innerHTML = `
     <div class="app-shell">
 
@@ -206,7 +164,7 @@ function renderApp() {
       <div class="main">
         <div class="header">
           <button data-action="toggleMenu">☰</button>
-          <span>${state.profile?.email}</span>
+          <span>${state.profile?.email || ''}</span>
         </div>
 
         <div class="content">
@@ -219,8 +177,7 @@ function renderApp() {
   bindGlobalEvents();
 }
 
-
-//================AUTH VIEWS=================
+// ================= AUTH VIEWS =================
 function renderLogin() {
   return `
     <h2>Iniciar Sesión</h2>
@@ -234,6 +191,7 @@ function renderLogin() {
         <input type="password" id="pass" />
       </div>
       <button type="button" data-action="login">Iniciar Sesión</button>
+      <p style="margin-top:10px;cursor:pointer" data-nav="register">Crear cuenta</p>
     </form>
   `;
 }
@@ -251,10 +209,10 @@ function renderRegister() {
         <input type="password" id="pass" />
       </div>
       <button type="button" data-action="register">Registrarse</button>
+      <p style="margin-top:10px;cursor:pointer" data-nav="login">Volver</p>
     </form>
   `;
 }
-
 
 // ================= VIEWS =================
 function renderView() {
@@ -262,7 +220,6 @@ function renderView() {
   if (state.view === 'profile') return renderProfile();
   if (state.view === 'cash') return renderCash();
   if (state.view === 'metrics') return renderMetrics();
-
   return renderDashboard();
 }
 
@@ -316,7 +273,6 @@ function renderCash() {
 // ================= METRICS =================
 function renderMetrics() {
   if (!isAdmin()) return '';
-
   return `
     <h2>Métricas</h2>
     <div class="cards">
@@ -324,7 +280,6 @@ function renderMetrics() {
       <div class="card">Semana: $${state.metrics?.weekly}</div>
       <div class="card">Mes: $${state.metrics?.monthly}</div>
     </div>
-    <canvas id="chart"></canvas>
   `;
 }
 
@@ -332,17 +287,8 @@ function renderMetrics() {
 function renderProfile() {
   return `
     <h2>Perfil</h2>
-
     <p>Email: ${state.profile?.email}</p>
     <p>Rol: ${state.profile?.role}</p>
-
-    ${isAdmin() ? `
-      <select id="role">
-        <option value="admin">Admin</option>
-        <option value="employee">Empleado</option>
-      </select>
-      <button data-action="updateRole">Guardar Rol</button>
-    ` : ''}
 
     <input id="newPassword" type="password" placeholder="Nueva contraseña"/>
     <button data-action="updatePassword">Actualizar</button>
@@ -357,29 +303,21 @@ function bindGlobalEvents() {
     if (t.dataset.nav) return setState({ view: t.dataset.nav, menuOpen: false });
 
     if (t.dataset.action === 'login') {
-      await login(email.value, pass.value);
+      await login(
+        document.getElementById('email').value,
+        document.getElementById('pass').value
+      );
     }
 
     if (t.dataset.action === 'register') {
-      await register(email.value, pass.value);
+      await register(
+        document.getElementById('email').value,
+        document.getElementById('pass').value
+      );
     }
 
     if (t.dataset.action === 'logout') logout();
-
-    if (t.dataset.action === 'updateRole') await updateRole();
-    if (t.dataset.action === 'updatePassword') await updatePassword();
-
-    if (t.dataset.action === 'status') {
-      await updateOrderStatus(t.dataset.id, t.dataset.status);
-    }
-
-    if (t.dataset.action === 'pay') {
-      await markAsPaid(t.dataset.id);
-    }
-
-    if (t.dataset.action === 'closeCash') {
-      await closeCash();
-    }
+    if (t.dataset.action === 'closeCash') alert("Caja cerrada (demo)");
 
     if (t.dataset.action === 'toggleMenu') {
       setState({ menuOpen: !state.menuOpen });
@@ -389,30 +327,36 @@ function bindGlobalEvents() {
 
 // ================= INIT =================
 async function init() {
-  const config = await fetch(`${API_BASE}/api/config`).then(r => r.json());
+  try {
+    const config = await fetch(`${API_BASE}/api/config`).then(r => r.json());
 
-  const app = initializeApp(config);
-  const auth = getAuth(app);
+    const app = initializeApp(config);
+    const auth = getAuth(app);
 
-  state.auth = auth;
+    state.auth = auth;
 
-  onAuthStateChanged(auth, async (user) => {
+    onAuthStateChanged(auth, async (user) => {
 
-    if (!user) {
-      setState({ user: null, initialized: true, view: 'login' });
-      return;
-    }
+      if (!user) {
+        setState({ user: null, initialized: true, view: 'login' });
+        return;
+      }
 
-    await user.getIdToken(true);
+      await user.getIdToken(true);
 
-    setState({ user });
+      setState({ user });
 
-    await loadProfile();
-    await loadOrders();
-    await loadMetrics();
+      await loadProfile();
+      await loadOrders();
+      await loadMetrics();
 
-    setState({ initialized: true, view: 'dashboard' });
-  });
+      setState({ initialized: true, view: 'dashboard' });
+    });
+
+  } catch (e) {
+    console.error(e);
+    appRoot.innerHTML = `<p>Error cargando app</p>`;
+  }
 }
 
 init();
