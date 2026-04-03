@@ -2,7 +2,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.1/firebas
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js';
 
 import { api } from './api.js';
-import { login, register, logout } from './auth.js';
+import { login, logout } from './auth.js';
 import { renderAdmin, loadAdminData } from './admin.js';
 import { renderEmployee, loadEmployeeData } from './employee.js';
 import { renderLayout } from './ui.js';
@@ -25,39 +25,58 @@ function setState(newState) {
 
 // ================= INIT =================
 async function init() {
-  const config = await fetch('/api/config').then(r => r.json());
+  try {
+    console.log("INIT APP");
 
-  const app = initializeApp(config);
-  const auth = getAuth(app);
+    const res = await fetch('/api/config');
 
-  state.auth = auth;
+    if (!res.ok) throw new Error("Error cargando config");
 
-  onAuthStateChanged(auth, async (user) => {
+    const config = await res.json();
 
-    if (!user) {
-      renderLogin();
-      return;
-    }
+    const app = initializeApp(config);
+    const auth = getAuth(app);
 
-    setState({ user });
+    state.auth = auth;
 
-    const profile = await api('/api/users/me');
+    onAuthStateChanged(auth, async (user) => {
 
-    if (!profile) {
-      alert("Error perfil");
-      return;
-    }
+      if (!user) {
+        setState({ user: null, initialized: true });
+        renderLogin();
+        return;
+      }
 
-    setState({ profile });
+      setState({ user });
 
-    if (profile.role === 'admin') {
-      await loadAdminData(state, setState);
-    } else {
-      await loadEmployeeData(state, setState);
-    }
+      const profile = await api('/api/users/me');
 
-    setState({ initialized: true });
-  });
+      if (!profile) {
+        console.warn("Perfil no cargado, fallback");
+
+        setState({
+          profile: {
+            email: user.email,
+            role: 'employee'
+          }
+        });
+      } else {
+        setState({ profile });
+      }
+
+      if (state.profile.role === 'admin') {
+        await loadAdminData(state, setState);
+      } else {
+        await loadEmployeeData(state, setState);
+      }
+
+      setState({ initialized: true });
+    });
+
+  } catch (e) {
+    console.error("INIT ERROR:", e);
+    appRoot.innerHTML = `<h2>Error inicializando app: ${e.message}</h2>`;
+  }
 }
 
 // ================= RENDER =================
@@ -66,6 +85,8 @@ function render() {
     appRoot.innerHTML = `<p>Cargando...</p>`;
     return;
   }
+
+  if (!state.user) return;
 
   let content = '';
 
@@ -84,16 +105,16 @@ function render() {
 function renderLogin() {
   appRoot.innerHTML = `
     <h2>Login</h2>
-    <input id="email"/>
-    <input id="pass" type="password"/>
+    <input id="email" placeholder="Email"/>
+    <input id="pass" type="password" placeholder="Password"/>
     <button id="btnLogin">Entrar</button>
   `;
 
   document.getElementById('btnLogin').onclick = async () => {
     await login(
       state.auth,
-      email.value,
-      pass.value
+      document.getElementById('email').value,
+      document.getElementById('pass').value
     );
   };
 }
