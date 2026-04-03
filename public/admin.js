@@ -21,11 +21,12 @@ export function renderAdmin(state) {
     </div>
 
     <h3>Pedidos</h3>
-    ${state.orders.map(o => `
+
+    ${(state.orders || []).map(o => `
       <div class="card">
-        <strong>${o.clientName}</strong>
-        <p>${o.status}</p>
-        <p>$${o.price}</p>
+        <strong>${o.clientName || 'Sin nombre'}</strong>
+        <p>${o.status || 'Sin estado'}</p>
+        <p>$${o.price || 0}</p>
 
         <button data-action="cancelOrder" data-id="${o.id}">❌ Cancelar</button>
         <button data-action="viewOrder" data-id="${o.id}">🔍 Ver</button>
