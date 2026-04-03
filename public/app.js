@@ -88,6 +88,12 @@ function render() {
 
   if (!state.user) return;
 
+  // 🔥 FIX CLAVE
+  if (!state.profile) {
+    appRoot.innerHTML = `<p>Cargando perfil...</p>`;
+    return;
+  }
+
   let content = '';
 
   if (state.profile.role === 'admin') {
