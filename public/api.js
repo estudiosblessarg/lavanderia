@@ -1,24 +1,32 @@
 export const API_BASE = "https://saaslavaderia.onrender.com";
 
-export async function api(path, options = {}) {
+async function api(path, options = {}) {
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
+    console.log("CALL:", path);
 
-    const data = await res.json().catch(() => ({}));
+    const res = await fetch(`${API_BASE}${path}`, options);
+
+    console.log("STATUS:", res.status);
+
+    const text = await res.text();
+    console.log("RAW RESPONSE:", text);
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("Respuesta no es JSON");
+    }
 
     if (!res.ok) {
-      throw new Error(data.message || `Error ${res.status}`);
+      throw new Error(data.error || data.message || "Error desconocido");
     }
 
     return data;
 
   } catch (e) {
-    console.error("API ERROR:", e.message);
+    console.error("ERROR REAL:", e);
+    alert("ERROR REAL: " + e.message);
     return null;
   }
-  }
+}
