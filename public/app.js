@@ -1,289 +1,132 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js';
-import {
-  getAuth,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut
-} from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js';
 
-const API_BASE = "https://saaslavaderia.onrender.com";
+import { api } from './api.js';
+import { login, register, logout } from './auth.js';
+import { renderAdmin, loadAdminData } from './admin.js';
+import { renderEmployee, loadEmployeeData } from './employee.js';
+import { renderLayout } from './ui.js';
+
 const appRoot = document.getElementById('app');
 
-// ================= STATE =================
 const state = {
   auth: null,
   user: null,
   profile: null,
   orders: [],
-  metrics: null,
-  view: 'login',
-  loading: false,
-  initialized: false,
-  menuOpen: false
+  metrics: {},
+  initialized: false
 };
 
 function setState(newState) {
   Object.assign(state, newState);
-  renderApp();
-}
-
-// ================= HELPERS =================
-const isAdmin = () => state.profile?.role === 'admin';
-const isEmployee = () => state.profile?.role === 'employee';
-
-// ================= API =================
-async function api(path, options = {}) {
-  try {
-    console.log("API CALL:", path);
-
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-
-    let data = {};
-    try {
-      data = await res.json();
-    } catch (_) {
-      console.warn("Respuesta sin JSON");
-    }
-
-    console.log("API RESPONSE:", res.status, data);
-
-    if (!res.ok) {
-      throw new Error(data.message || `Error ${res.status}`);
-    }
-
-    return data;
-
-  } catch (e) {
-    console.error("API ERROR DETALLADO:", e.message);
-
-    alert(`Error real: ${e.message}`);
-    return null; // ⚠️ no rompe la app
-  }
-}
-
-// ================= AUTH =================
-async function login(email, password) {
-  if (!email || !password) return alert('Completa email y contraseña');
-
-  try {
-    setState({ loading: true });
-
-    const cred = await signInWithEmailAndPassword(state.auth, email, password);
-
-    setState({ user: cred.user });
-
-  } catch (e) {
-    alert("Login error: " + e.message);
-  } finally {
-    setState({ loading: false });
-  }
-}
-
-async function register(email, password) {
-  if (!email || !password) return alert('Completa los campos');
-  if (password.length < 6) return alert('Minimo 6 caracteres');
-
-  try {
-    setState({ loading: true });
-
-    const cred = await createUserWithEmailAndPassword(state.auth, email, password);
-
-    await api('/api/users/register', {
-      method: 'POST',
-      body: JSON.stringify({
-        email: cred.user.email,
-        role: 'employee'
-      })
-    });
-
-    setState({ user: cred.user });
-
-  } catch (e) {
-    alert("Registro error: " + e.message);
-  } finally {
-    setState({ loading: false });
-  }
-}
-
-async function logout() {
-  await signOut(state.auth);
-
-  setState({
-    user: null,
-    profile: null,
-    orders: [],
-    view: 'login'
-  });
-}
-
-// ================= DATA =================
-async function loadProfile() {
-  const profile = await api('/api/users/me');
-
-  if (!profile) return;
-
-  setState({ profile });
-}
-
-async function loadOrders() {
-  const orders = await api('/api/orders');
-
-  if (!orders) return;
-
-  setState({ orders });
-}
-
-async function loadMetrics() {
-  if (!isAdmin()) return;
-
-  const metrics = await api('/api/metrics');
-
-  if (!metrics) return;
-
-  setState({ metrics });
-}
-
-// ================= UI =================
-function renderApp() {
-
-  if (!state.initialized) {
-    appRoot.innerHTML = `<div class="center"><p>Cargando...</p></div>`;
-    return;
-  }
-
-  if (!state.user) {
-    appRoot.innerHTML = `
-      <div class="main">
-        ${state.view === 'register' ? renderRegister() : renderLogin()}
-      </div>
-    `;
-    bindGlobalEvents();
-    return;
-  }
-
-  appRoot.innerHTML = `
-    <div class="app-shell">
-
-      <div class="sidebar ${state.menuOpen ? 'open' : ''}">
-        <div class="logo">🧺 Lavandería</div>
-
-        <button data-nav="dashboard">🏠 Dashboard</button>
-        <button data-nav="orders">📦 Pedidos</button>
-        <button data-nav="cash">💰 Caja</button>
-
-        ${isAdmin() ? `<button data-nav="metrics">📊 Métricas</button>` : ''}
-
-        <button data-nav="profile">👤 Perfil</button>
-        <button data-action="logout">🚪 Salir</button>
-      </div>
-
-      <div class="main">
-        <div class="header">
-          <button data-action="toggleMenu">☰</button>
-          <span>${state.profile?.email || ''}</span>
-        </div>
-
-        <div class="content">
-          ${renderView()}
-        </div>
-      </div>
-    </div>
-  `;
-
-  bindGlobalEvents();
+  render();
 }
 
 // ================= INIT =================
 async function init() {
-  try {
-    console.log("Inicializando app...");
+  const config = await fetch('/api/config').then(r => r.json());
 
-    const configRes = await fetch(`${API_BASE}/api/config`);
+  const app = initializeApp(config);
+  const auth = getAuth(app);
 
-    if (!configRes.ok) {
-      throw new Error("No se pudo cargar config");
+  state.auth = auth;
+
+  onAuthStateChanged(auth, async (user) => {
+
+    if (!user) {
+      renderLogin();
+      return;
     }
 
-    const config = await configRes.json();
+    setState({ user });
 
-    const app = initializeApp(config);
-    const auth = getAuth(app);
+    const profile = await api('/api/users/me');
 
-    state.auth = auth;
+    if (!profile) {
+      alert("Error perfil");
+      return;
+    }
 
-    onAuthStateChanged(auth, async (user) => {
-      console.log("Auth changed:", user);
+    setState({ profile });
 
-      if (!user) {
-        setState({
-          user: null,
-          initialized: true,
-          view: 'login'
-        });
-        return;
-      }
+    if (profile.role === 'admin') {
+      await loadAdminData(state, setState);
+    } else {
+      await loadEmployeeData(state, setState);
+    }
 
-      setState({ user });
-
-      // ⚠️ No rompemos si algo falla
-      await loadProfile();
-      await loadOrders();
-      await loadMetrics();
-
-      setState({
-        initialized: true,
-        view: 'dashboard'
-      });
-    });
-
-  } catch (e) {
-    console.error("INIT ERROR:", e);
-    appRoot.innerHTML = `<p>Error cargando app: ${e.message}</p>`;
-  }
+    setState({ initialized: true });
+  });
 }
 
-// ================= EVENTS =================
-function bindGlobalEvents() {
-  appRoot.onclick = async (e) => {
-    const t = e.target;
+// ================= RENDER =================
+function render() {
+  if (!state.initialized) {
+    appRoot.innerHTML = `<p>Cargando...</p>`;
+    return;
+  }
 
-    if (t.dataset.nav) return setState({ view: t.dataset.nav, menuOpen: false });
+  let content = '';
 
-    if (t.dataset.action === 'login') {
-      await login(
-        document.getElementById('email').value,
-        document.getElementById('pass').value
-      );
-    }
+  if (state.profile.role === 'admin') {
+    content = renderAdmin(state);
+  } else {
+    content = renderEmployee(state);
+  }
 
-    if (t.dataset.action === 'register') {
-      await register(
-        document.getElementById('email').value,
-        document.getElementById('pass').value
-      );
-    }
+  appRoot.innerHTML = renderLayout(content, state.profile);
 
-    if (t.dataset.action === 'logout') logout();
+  bindEvents();
+}
 
-    if (t.dataset.action === 'toggleMenu') {
-      setState({ menuOpen: !state.menuOpen });
-    }
+// ================= LOGIN =================
+function renderLogin() {
+  appRoot.innerHTML = `
+    <h2>Login</h2>
+    <input id="email"/>
+    <input id="pass" type="password"/>
+    <button id="btnLogin">Entrar</button>
+  `;
+
+  document.getElementById('btnLogin').onclick = async () => {
+    await login(
+      state.auth,
+      email.value,
+      pass.value
+    );
   };
 }
 
-// ================= SW =================
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then(reg => console.log('SW registrado', reg))
-      .catch(err => console.error('Error SW', err));
-  });
+// ================= EVENTS =================
+function bindEvents() {
+  appRoot.onclick = async (e) => {
+    const t = e.target;
+
+    if (t.dataset.action === 'logout') {
+      logout(state.auth);
+    }
+
+    if (t.dataset.action === 'cancelOrder') {
+      await api(`/api/orders/${t.dataset.id}/cancel`, { method: 'PUT' });
+      location.reload();
+    }
+
+    if (t.dataset.action === 'payOrder') {
+      await api(`/api/orders/${t.dataset.id}/pay`, { method: 'PUT' });
+      location.reload();
+    }
+
+    if (t.dataset.action === 'takeOrder') {
+      await api(`/api/orders/${t.dataset.id}/take`, { method: 'PUT' });
+      location.reload();
+    }
+
+    if (t.dataset.action === 'closeCash') {
+      await api(`/api/cash/close`, { method: 'POST' });
+      alert("Caja cerrada");
+    }
+  };
 }
 
 init();
